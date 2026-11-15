@@ -1848,8 +1848,9 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
 
                 // Apply vertical margins from the container to the image.
                 // Top margin lives on the empty text block (deposited via vertical merge
-                // in startNewTextBlock). Bottom margin was stripped by withoutBottom() for
-                // deferred application at element close, so read it from the stack.
+                // in startNewTextBlock). Bottom margin was stripped by withoutBottom() and is
+                // applied when the container closes; read it from the stack only so the
+                // image moves to the next page when both no longer fit.
                 int16_t imageMarginTop = 0;
                 int16_t imageMarginBottom = 0;
                 if (self->currentTextBlock && self->currentTextBlock->isEmpty()) {
@@ -1919,7 +1920,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                 self->setCurrentPageVisibleOffset(self->visibleTextOffset);
                 self->noteContent(self->currentPageNextY, self->currentPageNextY + displayHeight);
                 self->keepWithNextLines = 0;
-                self->currentPageNextY += displayHeight + imageMarginBottom;
+                self->currentPageNextY += displayHeight;
 
                 // The image consumed the empty block's accumulated vertical spacing.
                 // Reset the block so the Vertical merge in startNewTextBlock doesn't
@@ -2801,7 +2802,18 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
       // not on the first child via the empty-block merge in startNewTextBlock.
       if (self->currentTextBlock) {
         const auto style = self->currentTextBlock->getBlockStyle();
-        self->currentTextBlock->setBlockStyle(style.addBottom(self->blockStyleStack.back()));
+        const BlockStyle& closing = self->blockStyleStack.back();
+        BlockStyle merged = style.addBottom(closing);
+        // An empty block means the element's content is already laid out and this block
+        // will hold what follows, so the margin goes above that content, not below it.
+        // A frame with no content keeps its spacing on the block: closeBoxScope() reads it there.
+        const bool ownsEmptyBox = !self->boxScopes.empty() && self->boxScopes.back().depth == self->depth &&
+                                  self->boxScopes.back().top < 0 && !self->boxScopes.back().continued;
+        if (self->currentTextBlock->isEmpty() && !ownsEmptyBox) {
+          merged.marginTop = std::max(merged.marginTop, closing.marginBottom);
+          merged.marginBottom = style.marginBottom;
+        }
+        self->currentTextBlock->setBlockStyle(merged);
       }
       const bool breakAfter = self->blockStyleStack.back().pageBreakAfter;
       self->blockStyleStack.pop_back();

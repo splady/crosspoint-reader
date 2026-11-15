@@ -770,6 +770,119 @@ TEST_F(ChapterBlockDecorationTest, BreakAfterHeadingAddsOneLine) {
   EXPECT_EQ(parser.currentPageNextY - before, renderer.getLineHeight(0));
 }
 
+// Lines of the paragraph "Before", laid out inside a container with a 60 px bottom margin,
+// and of the paragraph "After" that follows it.
+class ContainerBottomMarginTest : public ChapterBlockDecorationTest {
+ protected:
+  static constexpr int MARGIN = 60;
+  void expectMarginBetweenBeforeAndAfter() {
+    open("p", nullptr);
+    text("After");
+    close("p");
+    open("p", nullptr);
+    text("Next");
+    close("p");
+    const auto lines = elementsWithTag(TAG_PageLine);
+    ASSERT_EQ(lines.size(), 3u);
+    const int lineHeight = renderer.getLineHeight(0);
+    EXPECT_EQ(lines[1]->yPos - lines[0]->yPos, lineHeight + MARGIN);
+    EXPECT_EQ(lines[2]->yPos - lines[1]->yPos, lineHeight);
+  }
+};
+
+TEST_F(ContainerBottomMarginTest, FollowsHeadingInNestedWrappers) {
+  // DocBook title pages: <div class="titlepage"><div><div><h2>…</h2></div></div></div>
+  open("div", "margin-bottom: 60px");
+  open("div", nullptr);
+  open("div", nullptr);
+  open("h2", nullptr);
+  text("Before");
+  close("h2");
+  close("div");
+  close("div");
+  close("div");
+  expectMarginBetweenBeforeAndAfter();
+}
+
+TEST_F(ContainerBottomMarginTest, FollowsLastParagraph) {
+  open("div", "margin-bottom: 60px");
+  open("p", nullptr);
+  text("Before");
+  close("p");
+  close("div");
+  expectMarginBetweenBeforeAndAfter();
+}
+
+TEST_F(ContainerBottomMarginTest, FollowsBareText) {
+  open("div", "margin-bottom: 60px");
+  text("Before");
+  close("div");
+  expectMarginBetweenBeforeAndAfter();
+}
+
+TEST_F(ContainerBottomMarginTest, CollapsesWithNestedAndFollowingMargins) {
+  open("div", "margin-bottom: 40px");
+  open("div", "margin-bottom: 60px");
+  open("p", nullptr);
+  text("Before");
+  close("p");
+  close("div");
+  close("div");
+  open("p", "margin-top: 20px");
+  text("After");
+  close("p");
+  const auto lines = elementsWithTag(TAG_PageLine);
+  ASSERT_EQ(lines.size(), 2u);
+  EXPECT_EQ(lines[1]->yPos - lines[0]->yPos, renderer.getLineHeight(0) + MARGIN);
+}
+
+TEST_F(ContainerBottomMarginTest, FollowsFramedContainer) {
+  open("div", "border: 1px solid; margin-bottom: 60px");
+  open("p", nullptr);
+  text("Before");
+  close("p");
+  close("div");
+  open("p", nullptr);
+  text("After");
+  close("p");
+  open("p", nullptr);
+  text("Next");
+  close("p");
+  const auto boxes = elementsWithTag(TAG_PageBorderBox);
+  ASSERT_EQ(boxes.size(), 1u);
+  const auto lines = elementsWithTag(TAG_PageLine);
+  ASSERT_EQ(lines.size(), 3u);
+  // The frame's padding adds to the gap, so only its lower bound is fixed.
+  EXPECT_GE(lines[1]->yPos - lines[0]->yPos, renderer.getLineHeight(0) + MARGIN);
+  EXPECT_EQ(lines[2]->yPos - lines[1]->yPos, renderer.getLineHeight(0));
+}
+
+TEST_F(ContainerBottomMarginTest, EmptyFrameKeepsItsMarginsAroundTheRule) {
+  open("p", nullptr);
+  text("Above");
+  close("p");
+  open("div", "border-top: 1px solid; margin-top: 20px; margin-bottom: 40px");
+  close("div");
+  open("p", nullptr);
+  text("Below");
+  close("p");
+  const auto boxes = elementsWithTag(TAG_PageBorderBox);
+  ASSERT_EQ(boxes.size(), 1u);
+  const auto lines = elementsWithTag(TAG_PageLine);
+  ASSERT_EQ(lines.size(), 2u);
+  EXPECT_GE(boxes[0]->yPos - lines[0]->yPos, renderer.getLineHeight(0) + 20);
+  EXPECT_GE(lines[1]->yPos - boxes[0]->yPos, 40);
+}
+
+TEST_F(ContainerBottomMarginTest, EmptyContainerSpacesFollowingText) {
+  open("p", nullptr);
+  text("Before");
+  close("p");
+  open("div", "margin-bottom: 60px");
+  close("div");
+  expectMarginBetweenBeforeAndAfter();
+}
+
 TEST_F(ChapterBlockDecorationTest, PreWrapPreservesSpacesAndLineBreaksAcrossCallbacks) {
   parser.extraParagraphSpacing = true;
   open("p", "white-space: pre-wrap; text-align: justify");

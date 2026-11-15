@@ -90,6 +90,14 @@ if (parsedSize != fileSize) {
 
 ## `section.bin`
 
+### Version 76
+
+Version 76 keeps the binary layout and rebuilds completed and partial sections.
+When a container closes after its content was already laid out (a heading
+wrapped in `<div>`s, a last paragraph, an image), its bottom margin now sits
+above the next block instead of below it, and an image no longer adds that
+margin a second time. Book metadata and saved progress are kept.
+
 ### Version 74
 
 Version 74 keeps the binary layout and rebuilds completed and partial sections.
