@@ -34,6 +34,7 @@
 #include "util/BookCacheUtils.h"
 #include "util/OpdsFeedError.h"
 #include "util/OpdsFilename.h"
+#include "util/StagedEpub.h"
 #include "util/UrlUtils.h"
 
 namespace fui = freeink::ui;
@@ -504,23 +505,26 @@ std::string OpdsBookBrowserActivity::downloadDestination(const OpdsEntry& book) 
   return filename;
 }
 
-// A purchase link (or any misbehaving endpoint) can answer 200 with an HTML
-// page; a real EPUB is a ZIP container. Check the magic before accepting the
-// file, then register it with the caches. False = rejected (fail() called).
-bool OpdsBookBrowserActivity::verifyAndRegisterEpub(const std::string& filename) {
-  uint8_t magic[4] = {0};
-  {
-    HalFile check;
-    if (Storage.openFileForRead("OPDS", filename.c_str(), check)) {
-      check.read(magic, sizeof(magic));
-    }
-    if (check.isOpen()) check.close();  // close before any remove() on the same path
-  }
-  if (!(magic[0] == 'P' && magic[1] == 'K' && magic[2] == 3 && magic[3] == 4)) {
-    LOG_ERR("OPDS", "Downloaded file is not an EPUB (magic %02x%02x%02x%02x)", magic[0], magic[1], magic[2], magic[3]);
-    Storage.remove(filename.c_str());
-    fail(StrId::STR_OPDS_NOT_A_BOOK);
-    return false;
+// Downloads are written to stagedEpubPath() and only replace the book once they
+// pass the EPUB check: a purchase link (or any misbehaving endpoint) can answer
+// 200 with an HTML page, and a rejected download must not cost an existing copy,
+// its cache or its reading position. Then register the book with the caches.
+// False = rejected (fail() called).
+bool OpdsBookBrowserActivity::installDownloadedEpub(const std::string& staged, const std::string& filename) {
+  switch (installStagedEpub(staged, filename)) {
+    case StagedEpubResult::Installed:
+      break;
+    case StagedEpubResult::NotEpub:
+      fail(StrId::STR_OPDS_NOT_A_BOOK);
+      return false;
+    case StagedEpubResult::ReplaceFailedLostOld:  // the old copy is gone: drop its cache and Library entry
+      clearBookCache(filename);
+      library::markLibraryIndexDirty();
+      fail(StrId::STR_DOWNLOAD_FAILED);
+      return false;
+    case StagedEpubResult::ReplaceFailedKeptOld:
+      fail(StrId::STR_DOWNLOAD_FAILED);
+      return false;
   }
   clearBookCache(filename);
   library::markLibraryIndexDirty();
@@ -552,6 +556,7 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
     downloadUrl = resolved;
   }
   const std::string filename = downloadDestination(book);
+  const std::string staged = stagedEpubPath(filename);
   LOG_DBG("OPDS", "Downloading: %s -> %s", downloadUrl.c_str(), filename.c_str());
 
   // The selected book data is now copied into the download URL, filename, and
@@ -568,7 +573,7 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
       const freeink::opds::HttpAuth dlAuth = opdsClient.downloadAuth();
       std::vector<HttpDownloader::Header> headers = dlAuth.headers;
       if (!dlAuth.bearer.empty()) headers.push_back({"Authorization", "Bearer " + dlAuth.bearer});
-      result = downloadFile(downloadUrl, filename, dlAuth.username, dlAuth.password, headers);
+      result = downloadFile(downloadUrl, staged, dlAuth.username, dlAuth.password, headers);
     }
     if (attempt != 0 || result != HttpDownloader::UNAUTHORIZED || HttpDownloader::lastStatus() != 401 ||
         HttpDownloader::lastAnswerRedirected() ||
@@ -592,7 +597,7 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
     if (!authenticated) break;
   }
 
-  if (result == HttpDownloader::OK && !verifyAndRegisterEpub(filename)) return;
+  if (result == HttpDownloader::OK && !installDownloadedEpub(staged, filename)) return;
   finishDownload(result);
 }
 
@@ -646,6 +651,7 @@ void OpdsBookBrowserActivity::downloadLcpBook(const OpdsEntry& book) {
   // firmware works unchanged when the service gains the production profile.
 
   const std::string filename = downloadDestination(book);
+  const std::string staged = stagedEpubPath(filename);
   LOG_DBG("OPDS", "LCP fulfill: %s -> %s", licenseUrl.c_str(), filename.c_str());
 
   // Reclaim the catalog while TLS owns its record buffers, as for a plain
@@ -654,13 +660,13 @@ void OpdsBookBrowserActivity::downloadLcpBook(const OpdsEntry& book) {
     RenderLock lock;
     releaseEntries();
   }
-  const auto result = downloadFile(freeink::content::LCP_FULFILL_URL, filename, "", "", {}, &licenseText,
+  const auto result = downloadFile(freeink::content::LCP_FULFILL_URL, staged, "", "", {}, &licenseText,
                                    "application/vnd.readium.lcp.license.v1.0+json");
   if (result != HttpDownloader::OK) {
     finishDownload(result);
     return;
   }
-  if (!verifyAndRegisterEpub(filename)) return;
+  if (!installDownloadedEpub(staged, filename)) return;
 
   pendingLcpLicense = std::move(license);
   pendingLcpLicenseText = std::move(licenseText);

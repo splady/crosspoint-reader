@@ -122,7 +122,9 @@ class OpdsBookBrowserActivity final : public CatalogActivity {
   // Decodes the /unlock response ({content_key: b64, expires: epoch}).
   static bool parseUnlockResponse(const std::string& response, LcpWrappedKey* wrapped, int64_t* expiresAt);
   std::string downloadDestination(const OpdsEntry& book) const;
-  bool verifyAndRegisterEpub(const std::string& filename);
+  // Moves a finished download from `staged` over `filename` if it is an EPUB and
+  // registers it; false = rejected (fail() called).
+  bool installDownloadedEpub(const std::string& staged, const std::string& filename);
   // Fulfilled LCP book awaiting its passphrase (path + parsed license).
   freeink::content::LcpLicense pendingLcpLicense;
   // Raw license JSON, kept verbatim for the /unlock request body.
