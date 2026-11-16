@@ -962,6 +962,30 @@ TEST_F(ContainerMarginForcedBreakTest, LargerWrapperMarginIsKept) {
   EXPECT_EQ(topOfOnlyLineOnNewPage(), 80);
 }
 
+TEST_F(ChapterBlockDecorationTest, SectionTopMarginSpacesItsFirstParagraph) {
+  open("p", nullptr);
+  text("Before");
+  close("p");
+  open("section", "margin-top: 60px");
+  open("p", nullptr);
+  text("After");
+  close("p");
+  close("section");
+  const auto lines = elementsWithTag(TAG_PageLine);
+  ASSERT_EQ(lines.size(), 2u);
+  EXPECT_EQ(lines[1]->yPos - lines[0]->yPos, renderer.getLineHeight(0) + 60);
+}
+
+// Standard Ebooks wraps chapter titles in <header>; its bottom margin spaces the chapter text.
+TEST_F(ContainerBottomMarginTest, FollowsHeader) {
+  open("header", "margin-bottom: 60px");
+  open("h2", nullptr);
+  text("Before");
+  close("h2");
+  close("header");
+  expectMarginBetweenBeforeAndAfter();
+}
+
 TEST_F(ChapterBlockDecorationTest, PreWrapPreservesSpacesAndLineBreaksAcrossCallbacks) {
   parser.extraParagraphSpacing = true;
   open("p", "white-space: pre-wrap; text-align: justify");
@@ -2397,6 +2421,20 @@ INSTANTIATE_TEST_SUITE_P(ClippingBoundaries, ClippingParagraphTest,
                                            "<p>one</p><p>&#160;two</p>", "<p>one</p><p>&#8239;two</p>",
                                            "one<div>two</div>", "<div>one<div>two</div></div>",
                                            "<div>one<p>two</p></div>", "<div>one<h3>two</h3></div>"));
+
+// HTML5 structural elements and <figcaption> are blocks, so each one starts a paragraph.
+class Html5BlockTagTest : public ChapterHtmlSlimParserTest {};
+
+TEST_P(Html5BlockTagTest, SeparatesAdjacentElements) {
+  const std::string tag = GetParam();
+  const std::string open = "<" + tag + ">";
+  const std::string close = "</" + tag + ">";
+  EXPECT_EQ(parseToParagraphText(open + "one" + close + open + "two" + close), "one\ntwo");
+}
+
+INSTANTIATE_TEST_SUITE_P(Html5BlockTags, Html5BlockTagTest,
+                         ::testing::Values("section", "article", "aside", "nav", "header", "footer", "main", "hgroup",
+                                           "figcaption"));
 
 TEST(TextSpacingLayout, ParagraphMarkerSurvivesBidiAndOnlyMarksFirstExtractedLine) {
   GfxRenderer renderer;

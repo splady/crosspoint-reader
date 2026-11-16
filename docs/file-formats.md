@@ -90,6 +90,14 @@ if (parsedSize != fileSize) {
 
 ## `section.bin`
 
+### Version 77
+
+Version 77 keeps the binary layout and rebuilds completed and partial sections.
+`<section>`, `<article>`, `<aside>`, `<nav>`, `<header>`, `<footer>`, `<main>`,
+`<hgroup>` and `<figcaption>` are now block containers, so their margins,
+padding and page breaks apply and their text starts a new paragraph. Book
+metadata and saved progress are kept.
+
 ### Version 76
 
 Version 76 keeps the binary layout and rebuilds completed and partial sections.

@@ -84,7 +84,8 @@ namespace {
 // v74: TrueType advances defer rounding until pixel placement.
 // v75: Headings are not hyphenated.
 // v76: A container's bottom margin follows its laid-out content, not the next block.
-constexpr uint8_t SECTION_FILE_VERSION = 76;
+// v77: HTML5 structural elements (<section>, <header>, ...) and <figcaption> are block containers.
+constexpr uint8_t SECTION_FILE_VERSION = 77;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects
