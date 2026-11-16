@@ -109,6 +109,7 @@ class ChapterHtmlSlimParser {
   bool effectiveSmallCaps = false;
   bool effectivePreserveWhitespace = false;
   bool pendingPageBreak = false;  // set when a page-break-after element closes
+  int16_t carriedMarginTop = 0;   // top margin carried onto the empty block from closed containers; 0 if none
 
   // Initial letter captured from a ::first-letter block or a leading float/initial-letter span,
   // drawn as a PageDropCap when its block is laid out.
@@ -247,6 +248,7 @@ class ChapterHtmlSlimParser {
 
   void updateEffectiveInlineStyle();
   void startNewTextBlock(const BlockStyle& blockStyle, bool paragraphEnd = true);
+  bool pendingAnchorStartsChapter() const;
   void flushPendingAnchor();
   void completeCurrentPage();
   void emitCurrentPage();

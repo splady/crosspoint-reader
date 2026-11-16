@@ -883,6 +883,85 @@ TEST_F(ContainerBottomMarginTest, EmptyContainerSpacesFollowingText) {
   expectMarginBetweenBeforeAndAfter();
 }
 
+// A forced break between the container and the next block drops the margin: the next
+// block starts at the top of the new page, plus only its own top margin.
+class ContainerMarginForcedBreakTest : public ContainerBottomMarginTest {
+ protected:
+  // Returns the top of "After", the only line on the current page after one completed page.
+  int topOfOnlyLineOnNewPage() {
+    EXPECT_EQ(pages.size(), 1u);
+    const auto lines = elementsWithTag(TAG_PageLine);
+    EXPECT_EQ(lines.size(), 2u);
+    return lines.size() == 2 ? lines[1]->yPos : -1;
+  }
+  int afterTop(const char* containerStyle, const char* lastChildStyle, const char* nextStyle) {
+    open("div", containerStyle);
+    open("p", lastChildStyle);
+    text("Before");
+    close("p");
+    close("div");
+    open("p", nextStyle);
+    text("After");
+    close("p");
+    return topOfOnlyLineOnNewPage();
+  }
+};
+
+TEST_F(ContainerMarginForcedBreakTest, BreakAfterContainer) {
+  EXPECT_EQ(afterTop("margin-bottom: 60px; page-break-after: always", nullptr, nullptr), 0);
+}
+
+TEST_F(ContainerMarginForcedBreakTest, BreakAfterLastChild) {
+  EXPECT_EQ(afterTop("margin-bottom: 60px", "page-break-after: always", nullptr), 0);
+}
+
+TEST_F(ContainerMarginForcedBreakTest, BreakBeforeNextBlockKeepsItsOwnMargin) {
+  EXPECT_EQ(afterTop("margin-bottom: 60px", nullptr, "page-break-before: always; margin-top: 20px"), 20);
+}
+
+TEST_F(ContainerMarginForcedBreakTest, BreakAfterOuterContainer) {
+  open("div", "page-break-after: always");
+  open("div", "margin-bottom: 60px");
+  open("p", nullptr);
+  text("Before");
+  close("p");
+  close("div");
+  close("div");
+  open("p", nullptr);
+  text("After");
+  close("p");
+  EXPECT_EQ(topOfOnlyLineOnNewPage(), 0);
+}
+
+TEST_F(ContainerMarginForcedBreakTest, TocChapterStart) {
+  parser.tocAnchors = {"ch2"};
+  open("div", "margin-bottom: 60px");
+  open("p", nullptr);
+  text("Before");
+  close("p");
+  close("div");
+  const XML_Char* chapter[] = {"id", "ch2", nullptr};
+  ChapterHtmlSlimParser::startElement(&parser, "h2", chapter);
+  text("After");
+  close("h2");
+  EXPECT_EQ(topOfOnlyLineOnNewPage(), 0);
+}
+
+// A wrapper opened after the container keeps its own larger top margin at the break.
+TEST_F(ContainerMarginForcedBreakTest, LargerWrapperMarginIsKept) {
+  open("div", "margin-bottom: 60px");
+  open("p", nullptr);
+  text("Before");
+  close("p");
+  close("div");
+  open("div", "margin-top: 80px");
+  open("p", "page-break-before: always");
+  text("After");
+  close("p");
+  close("div");
+  EXPECT_EQ(topOfOnlyLineOnNewPage(), 80);
+}
+
 TEST_F(ChapterBlockDecorationTest, PreWrapPreservesSpacesAndLineBreaksAcrossCallbacks) {
   parser.extraParagraphSpacing = true;
   open("p", "white-space: pre-wrap; text-align: justify");

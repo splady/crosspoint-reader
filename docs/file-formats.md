@@ -96,7 +96,10 @@ Version 76 keeps the binary layout and rebuilds completed and partial sections.
 When a container closes after its content was already laid out (a heading
 wrapped in `<div>`s, a last paragraph, an image), its bottom margin now sits
 above the next block instead of below it, and an image no longer adds that
-margin a second time. Book metadata and saved progress are kept.
+margin a second time. When a forced page break follows the container, that
+bottom margin is dropped, including before a chapter that starts on a new page,
+so the next page does not start with a gap. Book metadata and saved progress
+are kept.
 
 ### Version 74
 

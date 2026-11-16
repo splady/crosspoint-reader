@@ -328,13 +328,18 @@ void ChapterHtmlSlimParser::updateEffectiveInlineStyle() {
   }
 }
 
+bool ChapterHtmlSlimParser::pendingAnchorStartsChapter() const {
+  return !pendingAnchorId.empty() &&
+         std::find(tocAnchors.begin(), tocAnchors.end(), pendingAnchorId) != tocAnchors.end();
+}
+
 void ChapterHtmlSlimParser::flushPendingAnchor() {
   if (stopRequested) return;
   if (pendingAnchorId.empty()) return;
 
   // If the pending anchor is a TOC chapter boundary, force a page break after the previous
   // block is flushed so the chapter starts on a fresh page.
-  if (std::find(tocAnchors.begin(), tocAnchors.end(), pendingAnchorId) != tocAnchors.end()) {
+  if (pendingAnchorStartsChapter()) {
     if (currentPage && !currentPage->elements.empty()) {
       completeCurrentPage();
       if (stopRequested) return;
@@ -787,7 +792,14 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle, cons
       // container elements deposit their vertical margins on the empty block when they
       // open. Merge those into the new style so the first child in a container inherits
       // the container's vertical spacing.
-      const auto style = currentTextBlock->getBlockStyle();
+      auto style = currentTextBlock->getBlockStyle();
+      // The top margin carried from a closed container comes before a forced break
+      // (page-break-before or a TOC chapter start), so drop it. A larger margin from a
+      // wrapper opened since then is kept.
+      if (carriedMarginTop > 0 && style.marginTop == carriedMarginTop &&
+          (blockStyle.pageBreakBefore || pendingAnchorStartsChapter())) {
+        style.marginTop = 0;
+      }
       currentTextBlock->setBlockStyle(style.getCombinedBlockStyle(blockStyle, BlockStyle::CombineAxis::Vertical));
       inlineSize = InlineSizeState{};
 
@@ -815,6 +827,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle, cons
   if (stopRequested) return;
   dropCap.firstLetterPending = false;
   inlineSize = InlineSizeState{};
+  carriedMarginTop = 0;
   currentTextBlock =
       makeUniqueNoThrow<ParsedText>(blockHyphenationEnabled(), focusReadingEnabled, blockStyle, paragraphIndentSpaces);
   if (!currentTextBlock) {
@@ -2800,6 +2813,7 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
       // Apply closing element's bottom margin to the current text block so
       // container spacing appears after the element's content (on the last child),
       // not on the first child via the empty-block merge in startNewTextBlock.
+      const bool breakAfter = self->blockStyleStack.back().pageBreakAfter;
       if (self->currentTextBlock) {
         const auto style = self->currentTextBlock->getBlockStyle();
         const BlockStyle& closing = self->blockStyleStack.back();
@@ -2810,12 +2824,19 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
         const bool ownsEmptyBox = !self->boxScopes.empty() && self->boxScopes.back().depth == self->depth &&
                                   self->boxScopes.back().top < 0 && !self->boxScopes.back().continued;
         if (self->currentTextBlock->isEmpty() && !ownsEmptyBox) {
-          merged.marginTop = std::max(merged.marginTop, closing.marginBottom);
+          if (breakAfter || self->pendingPageBreak) {
+            // Margins before a forced page break are dropped, including ones carried
+            // from containers nested inside this one.
+            if (self->carriedMarginTop > 0 && merged.marginTop == self->carriedMarginTop) merged.marginTop = 0;
+            self->carriedMarginTop = 0;
+          } else if (closing.marginBottom > 0) {
+            merged.marginTop = std::max(merged.marginTop, closing.marginBottom);
+            self->carriedMarginTop = merged.marginTop;
+          }
           merged.marginBottom = style.marginBottom;
         }
         self->currentTextBlock->setBlockStyle(merged);
       }
-      const bool breakAfter = self->blockStyleStack.back().pageBreakAfter;
       self->blockStyleStack.pop_back();
       // Start a new text block with the parent style to prevent subsequent bare text
       // from inheriting the closed block style (e.g. alignment or margins).
